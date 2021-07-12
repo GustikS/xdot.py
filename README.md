@@ -1,3 +1,23 @@
+## Requirements
+
+Python 3 (best with 3.9)
+
+Try to install from the `requirements.txt` file. If that does not work, go to Installation (below).
+
+Installation
+=================
+
+1) install [GraphViz](https://graphviz.org/download/) - the graph layouting engine on the backend
+
+`sudo apt install graphviz`
+
+2) Install [PyGObjects](https://pygobject.readthedocs.io/en/latest/getting_started.html#ubuntu-getting-started) - python library for GUI applications (like this one)
+
+  - `sudo apt install libgirepository1.0-dev gcc libcairo2-dev pkg-config python3-dev gir1.2-gtk-3.0`
+  - `pip3 install pycairo`
+  - `pip3 install PyGObject`
+
+
 About _xdot.py_
 =================
 
