@@ -51,9 +51,7 @@ Requirements
 
  * [PyGObject bindings for GTK3](https://pygobject.readthedocs.io)
 
- * [NumPy](https://numpy.org/)
-
- * [Graphviz](https://graphviz.org/download/)
+ * [Graphviz](http://www.graphviz.org/Download.php)
 
 Windows users
 -------------
@@ -62,18 +60,16 @@ Download and install:
 
  * [Python for Windows](https://www.python.org/downloads/windows/)
 
- * [PyGObject bindings for GTK3](https://pygobject.readthedocs.io/en/latest/getting_started.html#windows-getting-started)
+ * [PyGObject bindings for GTK3](https://wiki.gnome.org/action/show/Projects/PyGObject)
 
- * `pip install numpy`
-
- * [Graphviz for Windows](https://graphviz.org/download/)
+ * [Graphviz for Windows](http://www.graphviz.org/Download_windows.php)
 
 Debian/Ubuntu users
 -------------------
 
 Run:
 
-    apt install gir1.2-gtk-3.0 python3-gi python3-gi-cairo python3-numpy graphviz
+    apt-get install gir1.2-gtk-3.0 python3-gi python3-gi-cairo graphviz
 
 Usage
 =====
@@ -109,7 +105,6 @@ You can also pass the following options:
       F                         find
       Q                         quit
       P                         print
-      T                         toggle toolbar
       Escape                    halt animation
       Ctrl-drag                 zoom in/out
       Shift-drag                zooms an area

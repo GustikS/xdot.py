@@ -1,0 +1,165 @@
+{
+  "object_name": "root",
+  "nested": [
+    {
+      "object_name": "idmaker",
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.features.teams",
+        "class_name": "Names2Ids"
+      },
+      "parameters": {
+        "name_cols": [
+          "HT",
+          "AT"
+        ]
+      },
+      "output": "meta_trainer"
+    },
+    {
+      "object_name": "meta_trainer",
+      "object_type": "MetaTrainer",
+      "parameters": {
+        "trainer": {
+          "object_name": "to_be_optimized",
+          "nested": [
+            {
+              "object_name": "repeating",
+              "object_type": "Repeating",
+              "parameters": {
+                "block": {
+                  "object_name": "to_repeat",
+                  "nested": [
+                    {
+                      "object_name": "rating_scope",
+                      "object_type": "WindowFilter",
+                      "parameters": {
+                        "window": {
+                          "object_type": "Window",
+                          "parameters": {
+                            "start": "2000-08-11",
+                            "end": "2002-08-11",
+                            "col": "Date"
+                          }
+                        },
+                        "shifter": {
+                          "object_name": "my_shifter",
+                          "object_type": "Roller",
+                          "parameters": {
+                            "stride": "365days"
+                          }
+                        }
+                      },
+                      "output": "rating"
+                    },
+                    {
+                      "object_name": "rating",
+                      "build_path": {
+                        "module_name": "architecture.datasets.templates.transformers.features.ratings",
+                        "class_name": "EloTransformer"
+                      },
+                      "parameters": {
+                        "k0": 10,
+                        "home_adv": 0,
+                        "gamma": 0,
+                        "score_cols": [
+                          "HS",
+                          "AS"
+                        ]
+                      },
+                      "output": "lr_scope"
+                    },
+                    {
+                      "object_name": "lr_scope",
+                      "object_type": "WindowFilter",
+                      "parameters": {
+                        "window": {
+                          "object_type": "Window",
+                          "parameters": {
+                            "start": "2001-08-11",
+                            "end": "2002-08-11",
+                            "col": "Date"
+                          }
+                        },
+                        "shifter": {
+                          "object_name": "my_shifter"
+                        }
+                      },
+                      "output": "rating_cols"
+                    },
+                    {
+                      "object_name": "rating_cols",
+                      "object_type": "ColumnFilter",
+                      "parameters": {
+                        "columns": [
+                          "Elo_H",
+                          "Elo_A",
+                          "WDL"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "condition": {
+                  "object_name": "scope_condition",
+                  "object_type": "ScopeCondition",
+                  "parameters": {
+                    "scopes": [
+                      {
+                        "object_name": "rating_scope"
+                      },
+                      {
+                        "object_name": "lr_scope"
+                      }
+                    ]
+                  }
+                }
+              },
+              "output": "LRtrainer"
+            },
+            {
+              "object_name": "LRtrainer",
+              "object_type": "ScikitTrainer",
+              "parameters": {
+                "model": {
+                  "object_name": "my_model",
+                  "object_type": "ScikitClassifier",
+                  "parameters": {
+                    "model_type": "LR",
+                    "model_params": {
+                      "multi_class": "multinomial",
+                      "solver": "lbfgs"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "metaoptimizer": {
+          "object_type": "GridSearch",
+          "parameters": {
+            "hyperparameters": {
+              "object_type": "HyperParameters",
+              "parameters": {
+                "hyperparameters": {
+                  "rating": {
+                    "k0": {
+                      "init" : 0,
+                      "lb": 0,
+                      "ub": 30,
+                      "step": 5
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "loss_func": {
+          "object_name": "mse",
+          "object_type": "MSE"
+        }
+      }
+    }
+  ]
+}

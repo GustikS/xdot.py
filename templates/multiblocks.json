@@ -1,0 +1,74 @@
+{
+  "object_name": "root",
+  "nested": [
+    {
+      "object_name": "splitter",
+      "parameters": {
+        "groupcols": [
+          "Sea"
+        ]
+      },
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.groupers",
+        "class_name": "Grouper"
+      },
+      "output": "multi"
+    },
+    {
+      "object_name": "multi",
+      "build_path": {
+        "module_name": "architecture.templates.extra",
+        "class_name": "MultiBlock"
+      },
+      "parameters": {
+        "inner_block": {
+          "object_name": "inner_root",
+          "nested": [
+            {
+              "object_name": "first",
+              "parameters": {
+                "columns": [
+                  "Sea",
+                  "HS",
+                  "AS"
+                ]
+              },
+              "build_path": {
+                "module_name": "architecture.datasets.templates.transformers.dataset.filters",
+                "class_name": "ColumnFilter"
+              },
+              "output": "next"
+            },
+            {
+              "object_name": "next",
+              "parameters": {
+                "agg_funcs": {
+                  "HS": [
+                    "count",
+                    "mean"
+                  ]
+                },
+                "output_name": "Season_group"
+              },
+              "build_path": {
+                "module_name": "architecture.datasets.templates.transformers.features.aggregators",
+                "class_name": "Aggregator"
+              }
+            }
+          ]
+        }
+      },
+      "output": "merger"
+    },
+    {
+      "object_name": "merger",
+      "parameters": {
+        "axis": 0
+      },
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.mergers",
+        "class_name": "Merger"
+      }
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "object_name": "learning",
+  "build_path": {
+    "module_name": "architecture.learning.templates",
+    "class_name": "WindowedLearning"
+  },
+  "parameters": {
+    "trainer": {
+      "object_name": "trainer",
+      "build_path": {
+        "module_name": "architecture.learning.training.templates",
+        "class_name": "ScikitTrainer"
+      },
+      "parameters": {
+        "model": {
+          "object_name": "my_model",
+          "parameters": {
+            "model_type": "LR",
+            "model_params": {
+              "multi_class": "multinomial",
+              "solver": "lbfgs"
+            }
+          },
+          "build_path": {
+            "module_name": "architecture.models.elementary.scikit",
+            "class_name": "ScikitClassifier"
+          }
+        }
+      }
+    },
+    "train_scope": {
+      "object_name": "trainWindowFilter",
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.filters",
+        "class_name": "WindowFilter"
+      },
+      "parameters": {
+        "window": {
+          "build_path": {
+            "module_name": "architecture.utils.windows",
+            "class_name": "Window"
+          },
+          "parameters": {
+            "start": "2000-08-11",
+            "end": "2001-08-11",
+            "col": "Date"
+          }
+        },
+        "shifter": {
+          "build_path": {
+            "module_name": "architecture.utils.windows",
+            "class_name": "Expander"
+          },
+          "parameters": {
+            "stride": "365days"
+          }
+        }
+      }
+    },
+    "tester": {
+      "object_name": "tester",
+      "build_path": {
+        "module_name": "architecture.learning.testing.templates",
+        "class_name": "ScikitTester"
+      },
+      "parameters": {
+        "model": {
+          "object_name": "my_model"
+        }
+      }
+    },
+    "test_scope": {
+      "object_name": "testWindowFilter",
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.filters",
+        "class_name": "WindowFilter"
+      },
+      "parameters": {
+        "window": {
+          "build_path": {
+            "module_name": "architecture.utils.windows",
+            "class_name": "Window"
+          },
+          "parameters": {
+            "start": "2001-08-11",
+            "end": "2002-08-11",
+            "col": "Date"
+          }
+        },
+        "shifter": {
+          "build_path": {
+            "module_name": "architecture.utils.windows",
+            "class_name": "Roller"
+          },
+          "parameters": {
+            "stride": "365days"
+          }
+        }
+      }
+    },
+    "condition": {
+      "build_path": {
+        "module_name": "architecture.utils",
+        "class_name": "ScopeCondition"
+      },
+      "parameters": {
+        "scopes": [
+          {
+            "object_name": "trainWindowFilter"
+          },
+          {
+            "object_name": "testWindowFilter"
+          }
+        ]
+      }
+    }
+  }
+}

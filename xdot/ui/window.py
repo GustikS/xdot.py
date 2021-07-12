@@ -1,4 +1,5 @@
 # Copyright 2008-2015 Jose Fonseca
+# Copyright 2008-2015 Jose Fonseca
 #
 # This program is free software: you can redistribute it and/or modify it
 # under the terms of the GNU Lesser General Public License as published
@@ -20,11 +21,12 @@ import re
 import subprocess
 import sys
 import time
-import operator
+import json
 
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('PangoCairo', '1.0')
+
 
 from gi.repository import GLib
 from gi.repository import GObject
@@ -42,7 +44,9 @@ from ..dot.lexer import ParseError
 from ..dot.parser import XDotParser
 from . import animation
 from . import actions
-from .elements import Graph
+from .elements import Graph, Node
+
+import visualization
 
 
 class DotWidget(Gtk.DrawingArea):
@@ -73,8 +77,7 @@ class DotWidget(Gtk.DrawingArea):
         self.add_events(Gdk.EventMask.POINTER_MOTION_MASK |
                         Gdk.EventMask.POINTER_MOTION_HINT_MASK |
                         Gdk.EventMask.BUTTON_RELEASE_MASK |
-                        Gdk.EventMask.SCROLL_MASK |
-                        Gdk.EventMask.SMOOTH_SCROLL_MASK)
+                        Gdk.EventMask.SCROLL_MASK)
         self.connect("motion-notify-event", self.on_area_motion_notify)
         self.connect("scroll-event", self.on_area_scroll_event)
         self.connect("size-allocate", self.on_area_size_allocate)
@@ -94,6 +97,12 @@ class DotWidget(Gtk.DrawingArea):
         self.highlight_search = False
         self.history_back = []
         self.history_forward = []
+
+        self.textbuffers = []
+        self.tags = []
+
+        self.reload_need = False
+        self.last_clicked_parameter_node = ""
 
     def error_dialog(self, message):
         self.emit('error', message)
@@ -157,23 +166,27 @@ class DotWidget(Gtk.DrawingArea):
         self.graph = parser.parse()
         self.zoom_image(self.zoom_ratio, center=center)
 
-    def reload(self):
-        if self.openfilename is not None:
-            try:
-                fp = open(self.openfilename, 'rb')
-                self._set_dotcode(fp.read(), self.openfilename, center=False)
-                fp.close()
-            except IOError:
-                pass
-            else:
-                del self.history_back[:], self.history_forward[:]
+    def reload(self, add_to_node="", add_existing_node=""):
+        if not self.reload_need:
+            return
+        start_iter = self.textbuffers[0].get_start_iter()
+        end_iter = self.textbuffers[0].get_end_iter()
+        text = self.textbuffers[0].get_text(start_iter, end_iter, True)
+        if add_to_node != "":
+            visualization_tool = visualization.VisualizationTool("temp", text, add_to=add_to_node, existing_node=add_existing_node)
+            resultDOT, json_text = visualization_tool.visualize_template()
+            self.textbuffers[0].set_text(json.dumps(json_text, indent=2))
+        else:
+            visualization_tool = visualization.VisualizationTool("temp", text)
+            resultDOT = visualization_tool.visualize_template()
+        self._set_dotcode(resultDOT.encode("utf-8"), "temp.dot")
+        self.textbuffers[1].set_text(resultDOT)
+        self.zoom_to_fit()
+        self.reload_need = False
 
     def update(self):
         if self.openfilename is not None:
-            try:
-                current_mtime = os.stat(self.openfilename).st_mtime
-            except OSError:
-                return True
+            current_mtime = os.stat(self.openfilename).st_mtime
             if current_mtime != self.last_mtime:
                 self.last_mtime = current_mtime
                 self.reload()
@@ -338,12 +351,6 @@ class DotWidget(Gtk.DrawingArea):
         if event.keyval == Gdk.KEY_p:
             self.on_print()
             return True
-        if event.keyval == Gdk.KEY_t:
-            # toggle toolbar visibility
-            win = widget.get_toplevel()
-            toolbar = win.uimanager.get_widget("/ToolBar")
-            toolbar.set_visible(not toolbar.get_visible())
-            return True
         return False
 
     print_settings = None
@@ -374,10 +381,10 @@ class DotWidget(Gtk.DrawingArea):
         state = event.state
         if event.button in (1, 2):  # left or middle button
             modifiers = Gtk.accelerator_get_default_mod_mask()
-            if state & modifiers == Gdk.ModifierType.CONTROL_MASK:
+            if state & modifiers == Gdk.ModifierType.CONTROL_MASK or state & modifiers == Gdk.ModifierType.SHIFT_MASK :
                 return actions.ZoomAction
-            elif state & modifiers == Gdk.ModifierType.SHIFT_MASK:
-                return actions.ZoomAreaAction
+            #elif state & modifiers == Gdk.ModifierType.SHIFT_MASK:
+            #    return actions.ZoomAreaAction
             else:
                 return actions.PanAction
         return actions.NullAction
@@ -405,11 +412,58 @@ class DotWidget(Gtk.DrawingArea):
         return (time.time() < self.presstime + click_timeout and
                 math.hypot(deltax, deltay) < click_fuzz)
 
+    def search_and_mark(self, text, i, start):
+        end = self.textbuffers[i].get_end_iter()
+        match = start.forward_search(text, 0, end)
+        if match is not None:
+            match_start, match_end = match
+            self.textbuffers[i].apply_tag(self.tags[i], match_start, match_end)
+            self.search_and_mark(text, i, match_end)
+            if i == 0:
+                self.textviewJSON.scroll_to_iter(match_start, 0.0, True, 0.5, 0.5)
+
     def on_click(self, element, event):
         """Override this method in subclass to process
         click events. Note that element can be None
         (click on empty space)."""
-        return False
+
+        if isinstance(element, Node):
+            node_id = element.id.decode("utf8")
+
+            # search and mark node name in textbuffers
+            self.search_through_text_buffers_and_mark(node_id)
+
+            # Check if action "add nodes" triggered by mouse and keyboard combinations
+            state = event.state
+            modifiers = Gtk.accelerator_get_default_mod_mask()
+            # CTRL + left click triggers new paramater to a cliked node
+            if state & modifiers == Gdk.ModifierType.CONTROL_MASK:
+                self.reload_need = True
+                self.reload(node_id)
+            # SHIFT + left click connect two nodes via parameter
+            if state & modifiers == Gdk.ModifierType.SHIFT_MASK:
+                if self.last_clicked_parameter_node != "":
+                    self.reload_need = True
+                    self.reload(node_id, self.last_clicked_parameter_node)
+                    self.last_clicked_parameter_node = ""
+                else:
+                    self.last_clicked_parameter_node = node_id
+            else:
+                self.last_clicked_parameter_node = ""
+
+        else:
+            self.last_clicked_parameter_node = ""
+
+        return True
+
+    def search_through_text_buffers_and_mark(self, node_id):
+        i = 0
+        for textbuffer in self.textbuffers:
+            start = textbuffer.get_start_iter()
+            end = textbuffer.get_end_iter()
+            textbuffer.remove_all_tags(start, end)
+            self.search_and_mark('"object_name": "' + node_id, i, textbuffer.get_start_iter())
+            i = i + 1
 
     def on_area_button_release(self, area, event):
         self.drag_action.on_button_release(event)
@@ -421,14 +475,7 @@ class DotWidget(Gtk.DrawingArea):
                 return True
 
             if event.button == 1:
-                url = self.get_url(x, y)
-                if url is not None:
-                    self.emit('clicked', url.url, event)
-                else:
-                    jump = self.get_jump(x, y)
-                    if jump is not None:
-                        self.animate_to(jump.x, jump.y)
-
+                self.emit('clicked', url.url, event)
                 return True
 
         if event.button == 1 or event.button == 2:
@@ -440,12 +487,8 @@ class DotWidget(Gtk.DrawingArea):
             self.zoom_image(self.zoom_ratio * self.ZOOM_INCREMENT,
                             pos=(event.x, event.y))
             return True
-        elif event.direction == Gdk.ScrollDirection.DOWN:
+        if event.direction == Gdk.ScrollDirection.DOWN:
             self.zoom_image(self.zoom_ratio / self.ZOOM_INCREMENT,
-                            pos=(event.x, event.y))
-        else:
-            deltas = event.get_scroll_deltas()
-            self.zoom_image(self.zoom_ratio * (1 - deltas.delta_y / 10),
                             pos=(event.x, event.y))
             return True
         return False
@@ -529,28 +572,21 @@ class DotWindow(Gtk.Window):
         <toolbar name="ToolBar">
             <toolitem action="Open"/>
             <toolitem action="Reload"/>
-            <toolitem action="Print"/>
-            <separator/>
-            <toolitem action="Back"/>
-            <toolitem action="Forward"/>
-            <separator/>
+            <toolitem action="Save"/>
+            <separator expand="true"/>
             <toolitem action="ZoomIn"/>
             <toolitem action="ZoomOut"/>
             <toolitem action="ZoomFit"/>
             <toolitem action="Zoom100"/>
             <separator/>
             <toolitem name="Find" action="Find"/>
-            <separator name="FindNextSeparator"/>
-            <toolitem action="FindNext"/>
-            <separator name="FindStatusSeparator"/>
-            <toolitem name="FindStatus" action="FindStatus"/>
         </toolbar>
     </ui>
     '''
 
     base_title = 'Dot Viewer'
 
-    def __init__(self, widget=None, width=512, height=512):
+    def __init__(self, widget=None, width=1000, height=500):
         Gtk.Window.__init__(self)
 
         self.graph = Graph()
@@ -559,12 +595,64 @@ class DotWindow(Gtk.Window):
 
         window.set_title(self.base_title)
         window.set_default_size(width, height)
+
+        #settings = Gtk.Settings.get_default()
+        #settings.set_property("gtk-theme-name", "Arc")
+        #settings.set_property("gtk-application-prefer-dark-theme",
+        #                      False)  # if you want use dark theme, set second arg to True
+
+        #grid = Gtk.Grid()
+        #flowbox = Gtk.FlowBox()
+        #flowbox.set_valign(Gtk.Align.START)
+        #window.add(flowbox)
+
+        self.box = Gtk.Box(spacing=0)
+        window.add(self.box)
+
+        scrolledWindowJSON = Gtk.ScrolledWindow()
+        scrolledWindowJSON.set_hexpand(True)
+        scrolledWindowJSON.set_vexpand(True)
+        self.textviewJSON = Gtk.TextView()
+        self.textbufferJSON = self.textviewJSON.get_buffer()
+        self.textbufferJSON.set_text("Just some JSON text with Hello and World.\nAs World example.")
+        scrolledWindowJSON.add(self.textviewJSON)
+
+        scrolledWindowDOT= Gtk.ScrolledWindow()
+        scrolledWindowDOT.set_hexpand(True)
+        scrolledWindowDOT.set_vexpand(True)
+        self.textviewDOT = Gtk.TextView()
+        self.textbufferDOT = self.textviewDOT.get_buffer()
+        self.textbufferDOT.set_text("HERE ONLY DOT TEXT \n WHICH CANNOT BE CHANGED")
+        scrolledWindowDOT.add(self.textviewDOT)
+        self.textviewDOT.set_editable(False)
+
+        self.tag_markedJSON = self.textbufferJSON.create_tag("found", background="gray")
+        self.tag_markedDOT = self.textbufferDOT.create_tag("found", background="gray")
+
+        #start = self.textbufferJSON.get_start_iter()
+        #end = self.textbufferJSON.get_end_iter()
+        #match = start.forward_search("some", 0, end)
+        #self.textbufferJSON.apply_tag(self.tag_markedJSON, match[0], match[1])
+
+        scrolledWindowJSON.set_min_content_width(350)
+        scrolledWindowDOT.set_min_content_width(350)
+
+        notebook = Gtk.Notebook()
+        notebook.append_page(scrolledWindowJSON, Gtk.Label("JSON text"))
+        notebook.append_page(scrolledWindowDOT, Gtk.Label("DOT graph"))
+
         vbox = Gtk.VBox()
-        window.add(vbox)
+        self.box.pack_start(notebook, True, True, 0)
+        self.box.pack_start(vbox, True, True, 0)
+
 
         self.dotwidget = widget or DotWidget()
         self.dotwidget.connect("error", lambda e, m: self.error_dialog(m))
         self.dotwidget.connect("history", self.on_history)
+
+        self.dotwidget.textbuffers.extend([self.textbufferJSON, self.textbufferDOT])
+        self.dotwidget.textviewJSON = self.textviewJSON
+        self.dotwidget.tags.extend([self.tag_markedJSON, self.tag_markedDOT])
 
         # Create a UIManager instance
         uimanager = self.uimanager = Gtk.UIManager()
@@ -581,32 +669,28 @@ class DotWindow(Gtk.Window):
         actiongroup.add_actions((
             ('Open', Gtk.STOCK_OPEN, None, None, None, self.on_open),
             ('Reload', Gtk.STOCK_REFRESH, None, None, None, self.on_reload),
-            ('Print', Gtk.STOCK_PRINT, None, None,
-             "Prints the currently visible part of the graph", self.dotwidget.on_print),
+            ('Save', Gtk.STOCK_PRINT, None, None, None, self.on_save),
+            #('Print', Gtk.STOCK_PRINT, None, None,
+            # "Prints the currently visible part of the graph", self.dotwidget.on_print),
             ('ZoomIn', Gtk.STOCK_ZOOM_IN, None, None, None, self.dotwidget.on_zoom_in),
             ('ZoomOut', Gtk.STOCK_ZOOM_OUT, None, None, None, self.dotwidget.on_zoom_out),
             ('ZoomFit', Gtk.STOCK_ZOOM_FIT, None, None, None, self.dotwidget.on_zoom_fit),
             ('Zoom100', Gtk.STOCK_ZOOM_100, None, None, None, self.dotwidget.on_zoom_100),
-            ('FindNext', Gtk.STOCK_GO_FORWARD, 'Next Result', None, 'Move to the next search result', self.on_find_next),
         ))
 
-        self.back_action = Gtk.Action('Back', None, None, Gtk.STOCK_GO_BACK)
-        self.back_action.set_sensitive(False)
-        self.back_action.connect("activate", self.dotwidget.on_go_back)
-        actiongroup.add_action(self.back_action)
+        #self.back_action = Gtk.Action('Back', None, None, Gtk.STOCK_GO_BACK)
+        #self.back_action.set_sensitive(False)
+        #self.back_action.connect("activate", self.dotwidget.on_go_back)
+        #actiongroup.add_action(self.back_action)
 
-        self.forward_action = Gtk.Action('Forward', None, None, Gtk.STOCK_GO_FORWARD)
-        self.forward_action.set_sensitive(False)
-        self.forward_action.connect("activate", self.dotwidget.on_go_forward)
-        actiongroup.add_action(self.forward_action)
+        #self.forward_action = Gtk.Action('Forward', None, None, Gtk.STOCK_GO_FORWARD)
+        #self.forward_action.set_sensitive(False)
+        #self.forward_action.connect("activate", self.dotwidget.on_go_forward)
+        #actiongroup.add_action(self.forward_action)
 
         find_action = FindMenuToolAction("Find", None,
                                          "Find a node by name", None)
         actiongroup.add_action(find_action)
-
-        findstatus_action = FindMenuToolAction("FindStatus", None,
-                                               "Number of results found", None)
-        actiongroup.add_action(findstatus_action)
 
         # Add the actiongroup to the uimanager
         uimanager.insert_action_group(actiongroup, 0)
@@ -634,15 +718,6 @@ class DotWindow(Gtk.Window):
         self.textentry.connect("activate", self.textentry_activate, self.textentry);
         self.textentry.connect("changed", self.textentry_changed, self.textentry);
 
-        uimanager.get_widget('/ToolBar/FindNextSeparator').set_draw(False)
-        uimanager.get_widget('/ToolBar/FindStatusSeparator').set_draw(False)
-        self.find_next_toolitem = uimanager.get_widget('/ToolBar/FindNext')
-        self.find_next_toolitem.set_sensitive(False)
-
-        self.find_count = Gtk.Label()
-        findstatus_toolitem = uimanager.get_widget('/ToolBar/FindStatus')
-        findstatus_toolitem.add(self.find_count)
-
         self.show_all()
 
     def find_text(self, entry_text):
@@ -652,11 +727,9 @@ class DotWindow(Gtk.Window):
         for element in dot_widget.graph.nodes + dot_widget.graph.edges:
             if element.search_text(regexp):
                 found_items.append(element)
-        return sorted(found_items, key=operator.methodcaller('get_text'))
+        return found_items
 
     def textentry_changed(self, widget, entry):
-        self.find_index = 0
-        self.find_next_toolitem.set_sensitive(False)
         entry_text = entry.get_text()
         dot_widget = self.dotwidget
         if not entry_text:
@@ -665,26 +738,18 @@ class DotWindow(Gtk.Window):
 
         found_items = self.find_text(entry_text)
         dot_widget.set_highlight(found_items, search=True)
-        if found_items:
-            self.find_count.set_label('%d nodes found' % len(found_items))
-        else:
-            self.find_count.set_label('')
 
     def textentry_activate(self, widget, entry):
-        self.find_index = 0
-        self.find_next_toolitem.set_sensitive(False)
         entry_text = entry.get_text()
         dot_widget = self.dotwidget
         if not entry_text:
             dot_widget.set_highlight(None, search=True)
-            self.set_focus(self.dotwidget)
             return
 
         found_items = self.find_text(entry_text)
         dot_widget.set_highlight(found_items, search=True)
-        if found_items:
-            dot_widget.animate_to(found_items[0].x, found_items[0].y)
-        self.find_next_toolitem.set_sensitive(len(found_items) > 1)
+        #if(len(found_items) == 1):
+        #    dot_widget.animate_to(found_items[0].x, found_items[0].y)
 
     def set_filter(self, filter):
         self.dotwidget.set_filter(filter)
@@ -714,6 +779,7 @@ class DotWindow(Gtk.Window):
             self.error_dialog(str(ex))
 
     def on_open(self, action):
+        self.dotwidget.reload_need = True
         chooser = Gtk.FileChooserDialog(parent=self,
                                         title="Open dot File",
                                         action=Gtk.FileChooserAction.OPEN,
@@ -724,8 +790,8 @@ class DotWindow(Gtk.Window):
         chooser.set_default_response(Gtk.ResponseType.OK)
         chooser.set_current_folder(self.last_open_dir)
         filter = Gtk.FileFilter()
-        filter.set_name("Graphviz dot files")
-        filter.add_pattern("*.dot")
+        filter.set_name("JSON files")
+        filter.add_pattern("*.json")
         chooser.add_filter(filter)
         filter = Gtk.FileFilter()
         filter.set_name("All files")
@@ -735,11 +801,27 @@ class DotWindow(Gtk.Window):
             filename = chooser.get_filename()
             self.last_open_dir = chooser.get_current_folder()
             chooser.destroy()
-            self.open_file(filename)
+            json_src = ""
+            with open(filename, 'r') as content_file:
+                json_src = content_file.read()
+            visualization_tool = visualization.VisualizationTool("temp", json_src)
+            resultDOT = visualization_tool.visualize_template()
+            self.textbufferJSON.set_text(json_src)
+            self.textbufferDOT.set_text(resultDOT)
+            self.set_dotcode(resultDOT.encode("utf-8"), "temp.dot")
+            self.last_filename = filename
         else:
             chooser.destroy()
 
+    def on_save(self, action):
+        start_iter = self.textbufferJSON.get_start_iter()
+        end_iter = self.textbufferJSON.get_end_iter()
+        text = self.textbufferJSON.get_text(start_iter, end_iter, True)
+        with open(self.last_filename, 'w') as content_file:
+            content_file.write(text)
+
     def on_reload(self, action):
+        self.dotwidget.reload_need = True
         self.dotwidget.reload()
 
     def error_dialog(self, message):
@@ -750,15 +832,6 @@ class DotWindow(Gtk.Window):
         dlg.set_title(self.base_title)
         dlg.run()
         dlg.destroy()
-
-    def on_find_next(self, action):
-        self.find_index += 1
-        entry_text = self.textentry.get_text()
-        # Maybe storing the search result would be better
-        found_items = self.find_text(entry_text)
-        found_item = found_items[self.find_index]
-        self.dotwidget.animate_to(found_item.x, found_item.y)
-        self.find_next_toolitem.set_sensitive(len(found_items) > self.find_index + 1)
 
     def on_history(self, action, has_back, has_forward):
         self.back_action.set_sensitive(has_back)

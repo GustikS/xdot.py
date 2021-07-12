@@ -56,10 +56,6 @@ Shortcuts:
         '-g', '--geometry',
         action='store', dest='geometry',
         help='default window size in form WxH')
-    parser.add_argument(
-        '--hide-toolbar',
-        action='store_true', dest='hide_toolbar',
-        help='Hides the toolbar on start.')
 
     options = parser.parse_args()
     inputfile = options.inputfile
@@ -79,9 +75,6 @@ Shortcuts:
             win.set_dotcode(sys.stdin.buffer.read())
         else:
             win.open_file(inputfile)
-
-    if options.hide_toolbar:
-        win.uimanager.get_widget('/ToolBar').set_visible(False)
 
     if sys.platform != 'win32':
         # Reset KeyboardInterrupt SIGINT handler, so that glib loop can be stopped by it

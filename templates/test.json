@@ -1,0 +1,31 @@
+{
+  "object_name": "root",
+  "nested": [
+    {
+      "object_name": "first",
+      "parameters": {
+        "columns": [
+          "HS",
+          "AS"
+        ]
+      },
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.filters",
+        "class_name": "ColumnFilter"
+      },
+      "output": "next"
+    },
+    {
+      "object_name": "next",
+      "parameters": {
+        "columns": [
+          "HS"
+        ]
+      },
+      "build_path": {
+        "module_name": "architecture.datasets.templates.transformers.dataset.filters",
+        "class_name": "ColumnFilter"
+      }
+    }
+  ]
+}
