@@ -1,11 +1,13 @@
 ## Requirements
-
-Python 3 (best with 3.9)
-
-Try to install from the `requirements.txt` file. If that does not work, go to Installation (below).
+Python 3
 
 Installation
 =================
+
+Do NOT use conda, create a new environment with `venv`, or use the system interpreter without any virtual env (probably necessary, unfortunately).
+
+Try to install from the `requirements.txt` file. If that does not work, go to Installation (below).
+
 
 1) install [GraphViz](https://graphviz.org/download/) - the graph layouting engine on the backend
 
@@ -16,6 +18,7 @@ Installation
   - `sudo apt install libgirepository1.0-dev gcc libcairo2-dev pkg-config python3-dev gir1.2-gtk-3.0`
   - `pip3 install pycairo`
   - `pip3 install PyGObject`
+  - `pip3 install pygraphviz`
 
 
 About _xdot.py_
