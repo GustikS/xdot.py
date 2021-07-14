@@ -4,9 +4,9 @@ Python 3
 Installation
 =================
 
-Do NOT use conda, create a new environment with `venv`, or use the system interpreter without any virtual env (probably necessary, unfortunately).
+Do NOT use `conda`, create a new environment with `venv`. Try to install from the `requirements.txt` file. 
 
-Try to install from the `requirements.txt` file. If that does not work, go to Installation (below).
+If that does not work, follow the manual installation steps without virtual environment.
 
 
 1) install [GraphViz](https://graphviz.org/download/) - the graph layouting engine on the backend
